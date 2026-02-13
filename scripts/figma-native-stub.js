@@ -1,7 +1,12 @@
 // Stub implementation of Figma native modules (bindings.node + desktop_rust.node) for Linux
 // These modules are Windows-specific native addons that need stubbing on Linux
 
-const { nativeTheme } = require('electron');
+let nativeTheme = null;
+try {
+	nativeTheme = require('electron').nativeTheme;
+} catch (e) {
+	// May fail in utility process where electron main APIs aren't available
+}
 
 // ---- bindings.node stubs ----
 // All methods that xe.* references in main.js
@@ -57,8 +62,9 @@ module.exports = {
 	// Menu shortcuts
 	setMenuShortcuts: () => {},
 
-	// Spellcheck dictionary
+	// Spellcheck / Dictionary
 	SetDictionary: () => {},
+	GetAvailableDictionaries: () => [],
 
 	// macOS-specific
 	launchApp: () => {},
@@ -67,7 +73,13 @@ module.exports = {
 };
 
 // ---- desktop_rust.node stubs ----
-// Lazy-loaded Rust native module
+// Used by main.js directly (kl variable) and by bindings_worker.js utility process
+// Provides font enumeration on Windows/macOS via native Rust code
 module.exports.desktop_rust = {
-	// Add stubs as needed when specific methods are discovered
+	// Font enumeration - returns JSON string of font data
+	getFonts: () => JSON.stringify({}),
+	// Returns timestamp of last font modification
+	getFontsModifiedAt: () => 0,
+	// Returns JSON string of fonts modified since last check
+	getModifiedFonts: () => JSON.stringify({}),
 };

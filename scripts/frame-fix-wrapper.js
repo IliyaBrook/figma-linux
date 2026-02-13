@@ -15,7 +15,16 @@ Module.prototype.require = function(id) {
 		if (OriginalBrowserWindow && !OriginalBrowserWindow.__figma_patched) {
 			module.BrowserWindow = class BrowserWindowWithFrame extends OriginalBrowserWindow {
 				constructor(options) {
-					console.log('[Frame Fix] BrowserWindow constructor called');
+					// Detect tray window by its preload script path
+					const preloadPath = options?.webPreferences?.preload || '';
+					const isTrayWindow = preloadPath.includes('tray_binding_renderer');
+
+					if (isTrayWindow) {
+						console.log('[Frame Fix] Tray notification BrowserWindow detected');
+					} else {
+						console.log('[Frame Fix] BrowserWindow constructor called');
+					}
+
 					if (process.platform === 'linux') {
 						options = options || {};
 						const originalFrame = options.frame;
@@ -32,7 +41,14 @@ Module.prototype.require = function(id) {
 					// Hide menu bar after window creation on Linux
 					if (process.platform === 'linux') {
 						this.setMenuBarVisibility(false);
-						console.log('[Frame Fix] Menu bar visibility set to false');
+
+						// Debug: open DevTools for tray notification window
+						if (isTrayWindow && process.env.FIGMA_DEBUG === '1') {
+							console.log('[Frame Fix] DEBUG: Opening DevTools for tray window');
+							this.webContents.on('dom-ready', () => {
+								this.webContents.openDevTools({ mode: 'detach' });
+							});
+						}
 					}
 				}
 			};

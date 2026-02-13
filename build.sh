@@ -703,7 +703,18 @@ console.log('Updated package.json: main entry set to frame-fix-entry.js');
 		sed -i 's|require("./desktop_rust.node")|require("./figma-native-stub.js").desktop_rust|g' "$main_js"
 		# Replace require("../rust/desktop_rust.node") with require("./figma-native-stub.js").desktop_rust
 		sed -i 's|require("../rust/desktop_rust.node")|require("./figma-native-stub.js").desktop_rust|g' "$main_js"
-		echo 'Native module loading patched'
+		echo 'Native module loading patched in main.js'
+	fi
+
+	# Also patch bindings_worker.js - runs as a utility process for font enumeration
+	local worker_js="$app_staging_dir/app.asar.contents/bindings_worker.js"
+	if [[ -f $worker_js ]]; then
+		echo 'Patching native module loading in bindings_worker.js...'
+		sed -i 's|require("./desktop_rust.node")|require("./figma-native-stub.js").desktop_rust|g' "$worker_js"
+		sed -i 's|require("../rust/desktop_rust.node")|require("./figma-native-stub.js").desktop_rust|g' "$worker_js"
+		echo 'Native module loading patched in bindings_worker.js'
+	else
+		echo 'Warning: bindings_worker.js not found - font utility process may crash'
 	fi
 
 	# ---- Patch handleCommandLineArgs for Linux argv ----
