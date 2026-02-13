@@ -780,25 +780,92 @@ if (code.includes(oldTray)) {
 "
 	fi
 
-	# ---- Patch tray window: DevTools debug support ----
-	# When FIGMA_DEBUG=1 is set, open DevTools for the tray notification window.
-	# We inject this directly into main.js because the BrowserWindow monkey-patch
-	# in frame-fix-wrapper.js may not intercept utility/tray window creation.
-	echo 'Patching tray window for debug DevTools support...'
+	# ---- Patch tray window: CSS fixes + DevTools debug support ----
+	# Fix notification dropdown: remove border-radius, fix scroll, and
+	# when FIGMA_DEBUG=1, open DevTools for the tray notification window.
+	# Injected directly into main.js (monkey-patch doesn't reach tray window).
+	echo 'Patching tray notification window (CSS fixes + debug DevTools)...'
 	if [[ -f $main_js ]]; then
 		node -e "
 const fs = require('fs');
 let code = fs.readFileSync('$main_js', 'utf8');
 
 const oldPattern = 't.setAlwaysOnTop(!0,\"pop-up-menu\"),t.webContents.on(\"will-navigate\"';
-const newPattern = 't.setAlwaysOnTop(!0,\"pop-up-menu\"),process.env.FIGMA_DEBUG===\"1\"&&t.webContents.on(\"dom-ready\",()=>{t.webContents.openDevTools({mode:\"detach\"})}),t.webContents.on(\"will-navigate\"';
+
+// CSS to fix notification dropdown on Linux:
+// 1. Remove border-radius on outer container
+// 2. Fix scroll: the scrollContainer--E33Ej needs to actually scroll
+// 3. Override overflow:hidden on parents that block scrolling
+// 4. Disable Figma's JS wheel-event capture that breaks native scroll
+const cssCode = \`
+[class*=\"desktop_dropdown_container--container\"] {
+  border-radius: 0 !important;
+}
+[class*=\"desktop_dropdown_container--notificationContainer\"] {
+  overflow: visible !important;
+}
+[class*=\"desktop_dropdown_container--scrollContainer\"] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+}
+[class*=\"scroll_container--clipContainer\"] {
+  overflow: visible !important;
+  height: auto !important;
+  pointer-events: auto !important;
+}
+[class*=\"scroll_container--scrollContainer\"] {
+  overflow: visible !important;
+  height: auto !important;
+}
+[class*=\"scroll_container--full\"] {
+  height: auto !important;
+}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.4); }
+\`.replace(/\\n/g, ' ');
+
+// JS to disable Figma's wheel-event capture that blocks native scrolling
+const jsCode = \`
+(function fixScroll() {
+  // Re-run on DOM changes since Figma renders dynamically
+  const observer = new MutationObserver(() => {
+    // Remove the wheel capture class so native scroll works
+    document.querySelectorAll('.js-fullscreen-wheel-event-capture').forEach(el => {
+      el.classList.remove('js-fullscreen-wheel-event-capture');
+    });
+    // Ensure scrollContainer actually scrolls
+    document.querySelectorAll('[class*="scrollContainer--E33Ej"], [class*="desktop_dropdown_container--scrollContainer"]').forEach(el => {
+      el.style.overflowY = 'auto';
+      el.style.flex = '1 1 0%';
+      el.style.minHeight = '0';
+    });
+  });
+  observer.observe(document.body || document.documentElement, {
+    childList: true, subtree: true
+  });
+  // Initial run
+  setTimeout(() => observer.disconnect(), 10000); // cleanup after 10s
+  document.querySelectorAll('.js-fullscreen-wheel-event-capture').forEach(el => {
+    el.classList.remove('js-fullscreen-wheel-event-capture');
+  });
+})();
+\`.replace(/\\n/g, ' ');
+
+const cssInject = 't.webContents.on(\"dom-ready\",()=>{t.webContents.insertCSS(' + JSON.stringify(cssCode) + ');t.webContents.executeJavaScript(' + JSON.stringify(jsCode) + ')})';
+const devToolsInject = 'process.env.FIGMA_DEBUG===\"1\"&&t.webContents.on(\"dom-ready\",()=>{t.webContents.openDevTools({mode:\"detach\"})})';
+
+const newPattern = 't.setAlwaysOnTop(!0,\"pop-up-menu\"),' + cssInject + ',' + devToolsInject + ',t.webContents.on(\"will-navigate\"';
 
 if (code.includes(oldPattern)) {
   code = code.replace(oldPattern, newPattern);
   fs.writeFileSync('$main_js', code);
-  console.log('Tray DevTools debug patch applied');
+  console.log('Tray notification CSS fixes + DevTools debug patch applied');
 } else {
-  console.error('Warning: Tray DevTools pattern not found');
+  console.error('Warning: Tray window pattern not found');
 }
 "
 	fi
