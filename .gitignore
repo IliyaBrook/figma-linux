@@ -1,3 +1,4 @@
 .*
 build/
-figma-desktop-*.AppImage
+figma-desktop*.AppImage
+figma-desktop*.deb

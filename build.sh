@@ -743,6 +743,32 @@ if (code.includes(oldCode)) {
 		echo 'Auto-updater Linux check preserved (updates disabled on Linux - expected)'
 	fi
 
+	# ---- Patch tray context menu for Linux ----
+	# On Linux with libappindicator (GNOME, KDE), Electron's 'right-click' event
+	# on Tray does NOT fire. Figma uses popUpContextMenu() inside a right-click
+	# handler, which never triggers. Fix: add setContextMenu() right after tray
+	# creation so appindicator can show the menu natively.
+	echo 'Patching tray context menu for Linux...'
+	if [[ -f $main_js ]]; then
+		node -e "
+const fs = require('fs');
+let code = fs.readFileSync('$main_js', 'utf8');
+
+// Find the tray init pattern and add setContextMenu after setToolTip
+const oldTray = 'this.electronTray.setToolTip(ne.name),this.electronTray.on(\"right-click\",()=>{var r;(r=this.electronTray)==null||r.popUpContextMenu(qSt())})';
+const newTray = 'this.electronTray.setToolTip(ne.name),this.electronTray.setContextMenu(qSt()),this.electronTray.on(\"right-click\",()=>{var r;(r=this.electronTray)==null||r.popUpContextMenu(qSt())})';
+
+if (code.includes(oldTray)) {
+  code = code.replace(oldTray, newTray);
+  fs.writeFileSync('$main_js', code);
+  console.log('Tray context menu patched: added setContextMenu(qSt()) for Linux');
+} else {
+  console.error('Warning: Tray context menu pattern not found - Figma may have updated');
+  console.error('Right-click on tray icon may not show context menu on Linux');
+}
+"
+	fi
+
 	cd "$project_root" || exit 1
 	echo 'Patching complete'
 	section_footer 'Patching app.asar'
