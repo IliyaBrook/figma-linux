@@ -33,9 +33,27 @@ The build script performs a multi-stage pipeline:
 3. **Package** — Bundles a matching Electron binary + patched `app.asar` into your chosen format
 4. **Integrate** — On first launch, the AppImage automatically registers a `.desktop` file and `figma://` URI handler
 
-## Quick Start
+## Installation
 
-### Prerequisites
+### Option 1: Download Pre-built AppImage (Recommended)
+
+Grab the latest AppImage from the [Releases](https://github.com/IliyaBrook/figma-linux/releases) page — no build step required:
+
+```bash
+chmod +x figma-desktop-*.AppImage
+./figma-desktop-*.AppImage
+```
+
+On first launch the AppImage automatically:
+- Creates a `.desktop` entry in `~/.local/share/applications/`
+- Registers itself as the `figma://` URL handler
+- Copies the Figma icon to your icon theme
+
+After that, Figma appears in your application menu like any other app.
+
+### Option 2: Build from Source
+
+#### Prerequisites
 
 - **Node.js 20+** (or the script installs it locally)
 - **p7zip** — for extracting the Windows installer
@@ -44,11 +62,11 @@ The build script performs a multi-stage pipeline:
 
 > The build script auto-detects missing dependencies and installs them via `apt` (Debian/Ubuntu) or `dnf` (Fedora/RHEL).
 
-### Build & Run
+#### Build & Run
 
 ```bash
-git clone https://github.com/nickvdp/figma-desktop-linux.git
-cd figma-desktop-linux
+git clone https://github.com/IliyaBrook/figma-linux.git
+cd figma-linux
 
 # Build an AppImage (default)
 ./build.sh
@@ -58,12 +76,7 @@ chmod +x figma-desktop-*.AppImage
 ./figma-desktop-*.AppImage
 ```
 
-That's it. The AppImage is portable — move it anywhere you like. On first launch it automatically:
-- Creates a `.desktop` entry in `~/.local/share/applications/`
-- Registers itself as the `figma://` URL handler
-- Copies the Figma icon to your icon theme
-
-### Build Options
+#### Build Options
 
 ```bash
 # Build a .deb package (Debian/Ubuntu)
@@ -82,7 +95,7 @@ That's it. The AppImage is portable — move it anywhere you like. On first laun
 ./build.sh --clean no
 ```
 
-### Install Packages
+#### Install Packages
 
 ```bash
 # Debian/Ubuntu
@@ -92,7 +105,7 @@ sudo apt install ./figma-desktop_*.deb
 sudo dnf install ./figma-desktop-*.rpm
 ```
 
-### Makefile Shortcuts
+#### Makefile Shortcuts
 
 ```bash
 make build          # Build AppImage (default)
