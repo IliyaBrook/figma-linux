@@ -780,6 +780,29 @@ if (code.includes(oldTray)) {
 "
 	fi
 
+	# ---- Patch tray window: DevTools debug support ----
+	# When FIGMA_DEBUG=1 is set, open DevTools for the tray notification window.
+	# We inject this directly into main.js because the BrowserWindow monkey-patch
+	# in frame-fix-wrapper.js may not intercept utility/tray window creation.
+	echo 'Patching tray window for debug DevTools support...'
+	if [[ -f $main_js ]]; then
+		node -e "
+const fs = require('fs');
+let code = fs.readFileSync('$main_js', 'utf8');
+
+const oldPattern = 't.setAlwaysOnTop(!0,\"pop-up-menu\"),t.webContents.on(\"will-navigate\"';
+const newPattern = 't.setAlwaysOnTop(!0,\"pop-up-menu\"),process.env.FIGMA_DEBUG===\"1\"&&t.webContents.on(\"dom-ready\",()=>{t.webContents.openDevTools({mode:\"detach\"})}),t.webContents.on(\"will-navigate\"';
+
+if (code.includes(oldPattern)) {
+  code = code.replace(oldPattern, newPattern);
+  fs.writeFileSync('$main_js', code);
+  console.log('Tray DevTools debug patch applied');
+} else {
+  console.error('Warning: Tray DevTools pattern not found');
+}
+"
+	fi
+
 	cd "$project_root" || exit 1
 	echo 'Patching complete'
 	section_footer 'Patching app.asar'
