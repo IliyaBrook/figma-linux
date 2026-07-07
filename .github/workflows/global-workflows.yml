@@ -1,4 +1,4 @@
-name: Telegram / Stale Issues / Claude Triage
+name: Telegram / Stale Issues / OpenClaw
 
 on:
   issues:
