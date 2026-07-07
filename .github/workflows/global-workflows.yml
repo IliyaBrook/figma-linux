@@ -34,7 +34,8 @@ jobs:
     secrets: inherit
 
   # Requires a repo self-hosted runner with labels self-hosted/openclaw,
-  # /opt/openclaw/bin/openclaw-github-responder on the runner host,
+  # /opt/openclaw/bin/openclaw-github-issue-responder and
+  # /opt/openclaw/bin/openclaw-github-discussion-responder on the runner host,
   # and /opt/openclaw/secrets/github-hook-token readable by the runner user.
   # No GitHub secrets are required for this job.
   openclaw-issue-responder:
@@ -45,7 +46,7 @@ jobs:
     uses: IliyaBrook/GitHub_workflows/.github/workflows/openclaw-issue-responder.yml@master
     with:
       runner-labels: '["self-hosted","openclaw"]'
-      responder-script: /opt/openclaw/bin/openclaw-github-responder
+      responder-script: /opt/openclaw/bin/openclaw-github-issue-responder
       bot-login: brooks-assistant
       assistant-name: Developer Assistant
       hook-url: http://127.0.0.1:18789/hooks/agent
@@ -57,11 +58,11 @@ jobs:
     if: github.event_name == 'discussion' || github.event_name == 'discussion_comment'
     permissions:
       contents: read
-      discussions: read
+      discussions: write
     uses: IliyaBrook/GitHub_workflows/.github/workflows/openclaw-discussion-responder.yml@master
     with:
       runner-labels: '["self-hosted","openclaw"]'
-      responder-script: /opt/openclaw/bin/openclaw-github-responder
+      responder-script: /opt/openclaw/bin/openclaw-github-discussion-responder
       bot-login: brooks-assistant
       assistant-name: Developer Assistant
       hook-url: http://127.0.0.1:18789/hooks/agent
