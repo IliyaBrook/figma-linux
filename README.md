@@ -82,7 +82,7 @@ This covers the normal font picker and the **Installed by you** flow. If you alr
 
 #### Prerequisites
 
-- **Node.js 20+** (or the script installs it locally)
+- **Node.js 22.12+** (or the script installs it locally)
 - **p7zip** — for extracting the Windows installer
 - **ImageMagick** — for icon conversion
 - **wget** — for downloading the installer

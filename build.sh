@@ -143,7 +143,7 @@ check_system_requirements() {
 
 	# Check for NVM and source it if found
 	if [[ -d $original_home/.nvm ]]; then
-		echo "Found NVM installation for user $original_user, checking for Node.js 20+..."
+		echo "Found NVM installation for user $original_user, checking for Node.js 22.12+..."
 		export NVM_DIR="$original_home/.nvm"
 		if [[ -s $NVM_DIR/nvm.sh ]]; then
 			# shellcheck disable=SC1091
@@ -244,7 +244,7 @@ parse_arguments() {
 check_dependencies() {
 	echo 'Checking dependencies...'
 	local deps_to_install=''
-	local common_deps='p7zip wget convert'
+	local common_deps='7z wget convert'
 	local all_deps="$common_deps"
 
 	# Add format-specific dependencies
@@ -255,12 +255,12 @@ check_dependencies() {
 
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
-		[p7zip]='p7zip-full' [wget]='wget'
+		[7z]='p7zip-full' [wget]='wget'
 		[convert]='imagemagick'
 		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm'
 	)
 	declare -A rpm_pkgs=(
-		[p7zip]='p7zip p7zip-plugins' [wget]='wget'
+		[7z]='p7zip p7zip-plugins' [wget]='wget'
 		[convert]='ImageMagick'
 		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
 	)
@@ -339,16 +339,18 @@ setup_nodejs() {
 
 	local node_version_ok=false
 	if command -v node &> /dev/null; then
-		local node_version node_major
+		local node_version node_major node_minor
 		node_version=$(node --version | cut -d'v' -f2)
 		node_major="${node_version%%.*}"
+		node_minor="${node_version#*.}"
+		node_minor="${node_minor%%.*}"
 		echo "System Node.js version: v$node_version"
 
-		if (( node_major >= 20 )); then
+		if (( node_major > 22 || (node_major == 22 && node_minor >= 12) )); then
 			echo "System Node.js version is adequate (v$node_version)"
 			node_version_ok=true
 		else
-			echo "System Node.js version is too old (v$node_version). Need v20+"
+			echo "System Node.js version is too old (v$node_version). Need v22.12+"
 		fi
 	else
 		echo 'Node.js not found in system'
@@ -360,10 +362,10 @@ setup_nodejs() {
 	fi
 
 	# Node.js version inadequate - install locally
-	echo 'Installing Node.js v20 locally in build directory...'
+	echo 'Installing Node.js v22 locally in build directory...'
 
 	local node_arch='x64'
-	local node_version_to_install='20.18.1'
+	local node_version_to_install='22.23.1'
 	local node_tarball="node-v${node_version_to_install}-linux-${node_arch}.tar.xz"
 	local node_url="https://nodejs.org/dist/v${node_version_to_install}/${node_tarball}"
 	local node_install_dir="$work_dir/node"
