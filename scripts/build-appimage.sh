@@ -246,56 +246,73 @@ cat > "$metadata_dir/${component_id}.appdata.xml" << EOF
 EOF
 echo "AppStream metadata created"
 
-# --- Get appimagetool ---
-appimagetool_path=''
+# --- Get appimagetool and Type-2 runtime ---
+# Pin and verify both artifacts. The maintained appimagetool otherwise downloads
+# a moving, unverified runtime during each build.
+readonly appimagetool_version='1.9.1'
+readonly runtime_version='20251108'
 
-if command -v appimagetool &> /dev/null; then
-	appimagetool_path=$(command -v appimagetool)
-	echo "Found appimagetool in PATH: $appimagetool_path"
-fi
+case "$architecture" in
+	amd64)
+		tool_arch='x86_64'
+		appimagetool_sha256='ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0'
+		runtime_sha256='2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d'
+		;;
+	arm64)
+		tool_arch='aarch64'
+		appimagetool_sha256='f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158'
+		runtime_sha256='00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444'
+		;;
+	*)
+		echo "Unsupported architecture for appimagetool: $architecture" >&2
+		exit 1
+		;;
+esac
 
-for arch in x86_64 aarch64; do
-	[[ -n $appimagetool_path ]] && break
-	local_path="$work_dir/appimagetool-${arch}.AppImage"
-	if [[ -f $local_path ]]; then
-		appimagetool_path="$local_path"
-		echo "Found downloaded ${arch} appimagetool: $appimagetool_path"
+download_verified() {
+	local url="$1"
+	local output="$2"
+	local expected_sha256="$3"
+
+	if [[ -f $output ]] && printf '%s  %s\n' "$expected_sha256" "$output" | sha256sum --check --status; then
+		echo "Using verified cached artifact: $output"
+		return
 	fi
-done
 
-if [[ -z $appimagetool_path ]]; then
-	echo 'Downloading appimagetool...'
-	case "$architecture" in
-		amd64) tool_arch='x86_64' ;;
-		arm64) tool_arch='aarch64' ;;
-		*)
-			echo "Unsupported architecture for appimagetool: $architecture" >&2
-			exit 1
-			;;
-	esac
-
-	appimagetool_url="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${tool_arch}.AppImage"
-	appimagetool_path="$work_dir/appimagetool-${tool_arch}.AppImage"
-
-	if wget -q -O "$appimagetool_path" "$appimagetool_url"; then
-		chmod +x "$appimagetool_path" || exit 1
-		echo "Downloaded appimagetool to $appimagetool_path"
-	else
-		echo "Failed to download appimagetool from $appimagetool_url" >&2
-		rm -f "$appimagetool_path"
+	echo "Downloading $url"
+	rm -f "$output"
+	if ! wget -q -O "$output" "$url"; then
+		echo "Failed to download $url" >&2
+		rm -f "$output"
 		exit 1
 	fi
-fi
+	if ! printf '%s  %s\n' "$expected_sha256" "$output" | sha256sum --check --status; then
+		echo "Checksum verification failed for $output" >&2
+		rm -f "$output"
+		exit 1
+	fi
+}
+
+appimagetool_path="$work_dir/appimagetool-${appimagetool_version}-${tool_arch}.AppImage"
+runtime_path="$work_dir/runtime-${runtime_version}-${tool_arch}"
+download_verified \
+	"https://github.com/AppImage/appimagetool/releases/download/${appimagetool_version}/appimagetool-${tool_arch}.AppImage" \
+	"$appimagetool_path" "$appimagetool_sha256"
+download_verified \
+	"https://github.com/AppImage/type2-runtime/releases/download/${runtime_version}/runtime-${tool_arch}" \
+	"$runtime_path" "$runtime_sha256"
+chmod +x "$appimagetool_path" || exit 1
 
 # --- Build AppImage ---
 echo 'Building AppImage...'
 output_filename="${package_name}-${version}-${architecture}.AppImage"
 output_path="$work_dir/$output_filename"
-export ARCH="$architecture"
+export ARCH="$tool_arch"
 echo "Using ARCH=$ARCH"
 
 echo 'Building AppImage without update information'
-if ! "$appimagetool_path" "$appdir_path" "$output_path"; then
+if ! APPIMAGE_EXTRACT_AND_RUN=1 "$appimagetool_path" \
+	--runtime-file "$runtime_path" "$appdir_path" "$output_path"; then
 	echo "Failed to build AppImage using $appimagetool_path" >&2
 	exit 1
 fi
