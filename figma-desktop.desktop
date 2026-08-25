@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Figma
+Exec=/usr/bin/figma-desktop %u
+Icon=figma-desktop
+Type=Application
+Terminal=false
+Categories=Graphics;Development;
+MimeType=x-scheme-handler/figma;
+StartupWMClass=Figma
+Comment=Figma Desktop for Linux

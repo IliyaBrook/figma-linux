@@ -103,6 +103,9 @@ detect_distro() {
 	if [[ -f /etc/debian_version ]]; then
 		distro_family='debian'
 		echo "Detected Debian-based distribution"
+	elif [[ -f /etc/arch-release ]]; then
+		distro_family='arch'
+		echo "Detected Arch-based distribution"
 	elif [[ -f /etc/fedora-release ]]; then
 		distro_family='rpm'
 		echo "Detected Fedora"
@@ -112,7 +115,7 @@ detect_distro() {
 	else
 		distro_family='unknown'
 		echo "Warning: Could not detect distribution family"
-		echo "  AppImage build will still work, but native packages (deb/rpm) may not"
+		echo "  AppImage build will still work, but native packages (deb/rpm/pacman) may not"
 	fi
 
 	echo "Distribution: $(grep 'PRETTY_NAME' /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo 'Unknown')"
@@ -179,6 +182,7 @@ parse_arguments() {
 	# Set default build format based on detected distro
 	case "$distro_family" in
 		debian) build_format='deb' ;;
+		arch) build_format='pacman' ;;
 		rpm) build_format='rpm' ;;
 		*) build_format='appimage' ;;
 	esac
@@ -198,8 +202,8 @@ parse_arguments() {
 				shift 2
 				;;
 			-h|--help)
-				echo "Usage: $0 [--build deb|rpm|appimage] [--clean yes|no] [--exe /path/to/FigmaSetup.exe]"
-				echo '  --build: Specify the build format (deb, rpm, or appimage).'
+				echo "Usage: $0 [--build deb|rpm|pacman|appimage] [--clean yes|no] [--exe /path/to/FigmaSetup.exe]"
+				echo '  --build: Specify the build format (deb, rpm, pacman, or appimage).'
 				echo "           Default: auto-detected based on distro (current: $build_format)"
 				echo '  --clean: Specify whether to clean intermediate build files (yes or no). Default: yes'
 				echo '  --exe:   Use a local Figma installer exe instead of downloading'
@@ -217,8 +221,8 @@ parse_arguments() {
 	build_format="${build_format,,}"
 	cleanup_action="${cleanup_action,,}"
 
-	if [[ $build_format != 'deb' && $build_format != 'rpm' && $build_format != 'appimage' ]]; then
-		echo "Invalid build format specified: '$build_format'. Must be 'deb', 'rpm', or 'appimage'." >&2
+	if [[ $build_format != 'deb' && $build_format != 'rpm' && $build_format != 'pacman' && $build_format != 'appimage' ]]; then
+		echo "Invalid build format specified: '$build_format'. Must be 'deb', 'rpm', 'pacman', or 'appimage'." >&2
 		exit 1
 	fi
 
@@ -227,6 +231,8 @@ parse_arguments() {
 		echo "Warning: Building .deb package on non-Debian system ($distro_family). This may fail." >&2
 	elif [[ $build_format == 'rpm' && $distro_family != 'rpm' ]]; then
 		echo "Warning: Building .rpm package on non-RPM system ($distro_family). This may fail." >&2
+	elif [[ $build_format == 'pacman' && $distro_family != 'arch' ]]; then
+		echo "Warning: Building pacman package on non-Arch system ($distro_family). This may fail." >&2
 	fi
 	if [[ $cleanup_action != 'yes' && $cleanup_action != 'no' ]]; then
 		echo "Invalid cleanup option specified: '$cleanup_action'. Must be 'yes' or 'no'." >&2
@@ -251,18 +257,24 @@ check_dependencies() {
 	case "$build_format" in
 		deb) all_deps="$all_deps dpkg-deb" ;;
 		rpm) all_deps="$all_deps rpmbuild" ;;
+		pacman) all_deps="$all_deps makepkg" ;;
 	esac
 
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
 		[p7zip]='p7zip-full' [wget]='wget'
 		[convert]='imagemagick'
-		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm'
+		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm' [makepkg]='pacman'
 	)
 	declare -A rpm_pkgs=(
 		[p7zip]='p7zip p7zip-plugins' [wget]='wget'
 		[convert]='ImageMagick'
-		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
+		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build' [makepkg]='pacman'
+	)
+	declare -A arch_pkgs=(
+		[p7zip]='p7zip' [wget]='wget'
+		[convert]='imagemagick'
+		[dpkg-deb]='dpkg' [rpmbuild]='rpm-tools' [makepkg]='pacman'
 	)
 
 	local cmd
@@ -274,6 +286,9 @@ check_dependencies() {
 					;;
 				rpm)
 					deps_to_install="$deps_to_install ${rpm_pkgs[$cmd]}"
+					;;
+				arch)
+					deps_to_install="$deps_to_install ${arch_pkgs[$cmd]}"
 					;;
 				*)
 					echo "Warning: Cannot auto-install '$cmd' on unknown distro. Please install manually." >&2
@@ -314,6 +329,13 @@ check_dependencies() {
 				# shellcheck disable=SC2086
 				if ! $sudo_cmd dnf install -y $deps_to_install; then
 					echo "Failed to install dependencies using 'dnf install'." >&2
+					exit 1
+				fi
+				;;
+			arch)
+				# shellcheck disable=SC2086
+				if ! $sudo_cmd pacman -S --noconfirm $deps_to_install; then
+					echo "Failed to install dependencies using 'pacman -S'." >&2
 					exit 1
 				fi
 				;;
@@ -1275,13 +1297,17 @@ run_packaging() {
 			script_name='build-rpm-package.sh'
 			file_pattern="${PACKAGE_NAME}-${version}*.rpm"
 			;;
+		pacman)
+			script_name='build-pacman-package.sh'
+			file_pattern="*.pkg.tar.zst"
+			;;
 		appimage)
 			script_name='build-appimage.sh'
 			file_pattern="${PACKAGE_NAME}-${version}-${architecture}.AppImage"
 			;;
 	esac
 
-	if [[ $build_format == 'deb' || $build_format == 'rpm' ]]; then
+	if [[ $build_format == 'deb' || $build_format == 'rpm' || $build_format == 'pacman' ]]; then
 		echo "Calling ${build_format^^} packaging script for $architecture..."
 		chmod +x "scripts/$script_name" || exit 1
 		if ! "scripts/$script_name" \
@@ -1297,6 +1323,12 @@ run_packaging() {
 			output_path="./$(basename "$pkg_file")"
 			mv "$pkg_file" "$output_path" || exit 1
 			echo "Package created at: $output_path"
+			# pacman also generates PKGBUILD/.SRCINFO in repo root for AUR
+			if [[ $build_format == 'pacman' ]]; then
+				[[ -f "$work_dir/PKGBUILD" ]] && cp "$work_dir/PKGBUILD" ./PKGBUILD
+				[[ -f "$work_dir/.SRCINFO" ]] && cp "$work_dir/.SRCINFO" ./.SRCINFO
+				[[ -f "$work_dir/figma-desktop.desktop" ]] && cp "$work_dir/figma-desktop.desktop" ./figma-desktop.desktop
+			fi
 		else
 			echo "Warning: Could not determine final .${build_format} file path."
 			output_path='Not Found'
@@ -1347,21 +1379,28 @@ print_next_steps() {
 	echo -e '\n\033[1;34m====== Next Steps ======\033[0m'
 
 	case "$build_format" in
-		deb|rpm)
+		deb|rpm|pacman)
 			if [[ $final_output_path != 'Not Found' && -e $final_output_path ]]; then
 				local pkg_type install_cmd alt_cmd
 				if [[ $build_format == 'deb' ]]; then
 					pkg_type='Debian'
 					install_cmd="sudo apt install $final_output_path"
 					alt_cmd="sudo dpkg -i $final_output_path"
-				else
+				elif [[ $build_format == 'rpm' ]]; then
 					pkg_type='RPM'
 					install_cmd="sudo dnf install $final_output_path"
 					alt_cmd="sudo rpm -i $final_output_path"
+				else
+					pkg_type='Pacman'
+					install_cmd="sudo pacman -U $final_output_path"
+					alt_cmd="makepkg -si (from AUR: figma-desktop-bin)"
 				fi
 				echo -e "To install the $pkg_type package, run:"
 				echo -e "   \033[1;32m$install_cmd\033[0m"
 				echo -e "   (or \`$alt_cmd\`)"
+				if [[ $build_format == 'pacman' ]]; then
+					echo -e "AUR files: PKGBUILD + .SRCINFO + figma-desktop.desktop updated in repo root"
+				fi
 			else
 				echo -e "${build_format^^} package file not found. Cannot provide installation instructions."
 			fi

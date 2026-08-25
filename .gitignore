@@ -15,6 +15,12 @@ rpmbuild/
 *.AppImage
 *.deb
 *.rpm
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+
+# makepkg artifacts (AUR)
+src/
+pkg/
 
 # Downloaded/extracted upstream artifacts
 FigmaSetup*.exe
