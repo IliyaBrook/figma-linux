@@ -244,7 +244,7 @@ parse_arguments() {
 check_dependencies() {
 	echo 'Checking dependencies...'
 	local deps_to_install=''
-	local common_deps='p7zip wget convert'
+	local common_deps='7z wget convert'
 	local all_deps="$common_deps"
 
 	# Add format-specific dependencies
@@ -255,12 +255,12 @@ check_dependencies() {
 
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
-		[p7zip]='p7zip-full' [wget]='wget'
+		[7z]='p7zip-full' [wget]='wget'
 		[convert]='imagemagick'
 		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm'
 	)
 	declare -A rpm_pkgs=(
-		[p7zip]='p7zip p7zip-plugins' [wget]='wget'
+		[7z]='7zip' [wget]='wget'
 		[convert]='ImageMagick'
 		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
 	)
