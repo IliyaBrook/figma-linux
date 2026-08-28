@@ -419,7 +419,8 @@ setup_electron_asar() {
 
 	if [[ $install_needed == true ]]; then
 		echo "Installing Electron $electron_version and Asar locally into $work_dir..."
-		if ! npm install --no-save "electron@$electron_version" @electron/asar; then
+		# asar 4.2.1+ rejects Figma's app.asar header (/.codesign has size -1000).
+		if ! npm install --no-save "electron@$electron_version" "@electron/asar@${FIGMA_ASAR_VERSION:-4.2.0}"; then
 			echo 'Failed to install Electron and/or Asar locally.' >&2
 			cd "$project_root" || exit 1
 			exit 1
