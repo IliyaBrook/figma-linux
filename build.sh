@@ -584,7 +584,10 @@ detect_electron_version() {
 			| head -1 | sed 's|Electron/||')
 	fi
 
-	if [[ -n $detected ]]; then
+	if [[ -n ${FIGMA_ELECTRON_VERSION:-} ]]; then
+		electron_version="$FIGMA_ELECTRON_VERSION"
+		echo "Using Electron version override: $electron_version (detected: ${detected:-none})"
+	elif [[ -n $detected ]]; then
 		electron_version="$detected"
 		echo "Detected Electron version from Figma.exe: $electron_version"
 	else
