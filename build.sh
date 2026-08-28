@@ -244,7 +244,7 @@ parse_arguments() {
 check_dependencies() {
 	echo 'Checking dependencies...'
 	local deps_to_install=''
-	local common_deps='p7zip wget convert'
+	local common_deps='7z wget convert'
 	local all_deps="$common_deps"
 
 	# Add format-specific dependencies
@@ -255,12 +255,12 @@ check_dependencies() {
 
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
-		[p7zip]='p7zip-full' [wget]='wget'
+		[7z]='p7zip-full' [wget]='wget'
 		[convert]='imagemagick'
 		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm'
 	)
 	declare -A rpm_pkgs=(
-		[p7zip]='p7zip p7zip-plugins' [wget]='wget'
+		[7z]='7zip' [wget]='wget'
 		[convert]='ImageMagick'
 		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
 	)
@@ -419,7 +419,8 @@ setup_electron_asar() {
 
 	if [[ $install_needed == true ]]; then
 		echo "Installing Electron $electron_version and Asar locally into $work_dir..."
-		if ! npm install --no-save "electron@$electron_version" @electron/asar; then
+		# asar 4.2.1+ rejects Figma's app.asar header (/.codesign has size -1000).
+		if ! npm install --no-save "electron@$electron_version" "@electron/asar@${FIGMA_ASAR_VERSION:-4.2.0}"; then
 			echo 'Failed to install Electron and/or Asar locally.' >&2
 			cd "$project_root" || exit 1
 			exit 1
@@ -583,7 +584,10 @@ detect_electron_version() {
 			| head -1 | sed 's|Electron/||')
 	fi
 
-	if [[ -n $detected ]]; then
+	if [[ -n ${FIGMA_ELECTRON_VERSION:-} ]]; then
+		electron_version="$FIGMA_ELECTRON_VERSION"
+		echo "Using Electron version override: $electron_version (detected: ${detected:-none})"
+	elif [[ -n $detected ]]; then
 		electron_version="$detected"
 		echo "Detected Electron version from Figma.exe: $electron_version"
 	else
