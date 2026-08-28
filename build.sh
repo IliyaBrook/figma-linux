@@ -58,6 +58,37 @@ check_command() {
 	fi
 }
 
+check_fuse2() {
+	# The bundled AppImage runtime requires the FUSE2 userspace library
+	# (libfuse.so.2). Detect the library directly instead of a command name:
+	# several distros ship fuse3 (libfuse.so.3) but not fuse2, and fuse3 is
+	# NOT a substitute. libfuse.so.2 is also needed at build time because
+	# appimagetool is itself distributed as an AppImage.
+	if ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
+		echo "fuse2 library (libfuse.so.2) found"
+		return 0
+	fi
+	echo "fuse2 library (libfuse.so.2) not found"
+	return 1
+}
+
+# Echo the distro-specific package(s) providing FUSE2 (libfuse.so.2).
+fuse2_pkg_for_distro() {
+	case "$distro_family" in
+		debian)
+			# Ubuntu >= 24.04 / Debian >= 13 renamed libfuse2 -> libfuse2t64
+			if grep -qE '^VERSION_ID="(2[4-9]|1[3-9])' /etc/os-release 2>/dev/null; then
+				echo 'libfuse2t64'
+			else
+				echo 'libfuse2'
+			fi
+			;;
+		rpm) echo 'fuse fuse-libs' ;;
+		arch) echo 'fuse2' ;;
+		*) echo '' ;;
+	esac
+}
+
 section_header() {
 	echo -e "\033[1;36m--- $1 ---\033[0m"
 }
@@ -109,6 +140,9 @@ detect_distro() {
 	elif [[ -f /etc/redhat-release ]]; then
 		distro_family='rpm'
 		echo "Detected Red Hat-based distribution"
+	elif [[ -f /etc/arch-release ]] || grep -qE '^ID(_LIKE)?=(")?arch(")?' /etc/os-release 2>/dev/null; then
+		distro_family='arch'
+		echo "Detected Arch-based distribution"
 	else
 		distro_family='unknown'
 		echo "Warning: Could not detect distribution family"
@@ -253,6 +287,12 @@ check_dependencies() {
 		rpm) all_deps="$all_deps rpmbuild" ;;
 	esac
 
+	# AppImage builds run appimagetool (itself an AppImage) and produce an
+	# AppImage whose runtime dlopens libfuse.so.2, so FUSE2 must be present.
+	if [[ $build_format == 'appimage' ]] && ! check_fuse2; then
+		all_deps="$all_deps fuse2"
+	fi
+
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
 		[p7zip]='p7zip-full' [wget]='wget'
@@ -264,16 +304,36 @@ check_dependencies() {
 		[convert]='ImageMagick'
 		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
 	)
+	declare -A arch_pkgs=(
+		[p7zip]='p7zip' [wget]='wget'
+		[convert]='imagemagick'
+		[fuse2]='fuse2'
+	)
 
 	local cmd
 	for cmd in $all_deps; do
 		if ! check_command "$cmd"; then
 			case "$distro_family" in
 				debian)
-					deps_to_install="$deps_to_install ${debian_pkgs[$cmd]}"
+					if [[ $cmd == 'fuse2' ]]; then
+						deps_to_install="$deps_to_install $(fuse2_pkg_for_distro)"
+					else
+						deps_to_install="$deps_to_install ${debian_pkgs[$cmd]}"
+					fi
 					;;
 				rpm)
-					deps_to_install="$deps_to_install ${rpm_pkgs[$cmd]}"
+					if [[ $cmd == 'fuse2' ]]; then
+						deps_to_install="$deps_to_install $(fuse2_pkg_for_distro)"
+					else
+						deps_to_install="$deps_to_install ${rpm_pkgs[$cmd]}"
+					fi
+					;;
+				arch)
+					if [[ -n ${arch_pkgs[$cmd]:-} ]]; then
+						deps_to_install="$deps_to_install ${arch_pkgs[$cmd]}"
+					else
+						echo "Warning: No Arch package mapping for '$cmd'. Please install manually." >&2
+					fi
 					;;
 				*)
 					echo "Warning: Cannot auto-install '$cmd' on unknown distro. Please install manually." >&2
@@ -314,6 +374,13 @@ check_dependencies() {
 				# shellcheck disable=SC2086
 				if ! $sudo_cmd dnf install -y $deps_to_install; then
 					echo "Failed to install dependencies using 'dnf install'." >&2
+					exit 1
+				fi
+				;;
+			arch)
+				# shellcheck disable=SC2086
+				if ! $sudo_cmd pacman -S --noconfirm $deps_to_install; then
+					echo "Failed to install dependencies using 'pacman -S'." >&2
 					exit 1
 				fi
 				;;
