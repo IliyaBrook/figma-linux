@@ -127,6 +127,10 @@ DESKTOP
 integrate_desktop 2>/dev/null || true
 
 # Detect display backend
+if ! check_display; then
+	echo 'Error: Figma Desktop requires a graphical desktop environment.' >&2
+	exit 1
+fi
 detect_display_backend
 
 # Log startup info
@@ -141,7 +145,7 @@ electron_exec="$appdir/usr/lib/node_modules/electron/dist/electron"
 app_path="$appdir/usr/lib/node_modules/electron/dist/resources/app.asar"
 
 # Build electron args (appimage mode adds --no-sandbox)
-build_electron_args 'appimage'
+build_electron_args 'appimage' || exit 1
 
 # Add app path LAST
 electron_args+=("$app_path")

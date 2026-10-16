@@ -147,7 +147,7 @@ fi
 app_path="/usr/lib/$package_name/node_modules/electron/dist/resources/app.asar"
 
 # Build electron args
-build_electron_args 'deb'
+build_electron_args 'deb' || exit 1
 
 # Add app path LAST
 electron_args+=("\$app_path")

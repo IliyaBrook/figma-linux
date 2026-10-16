@@ -144,6 +144,18 @@ make clean          # Remove all build artifacts
 make url            # Check Figma RELEASES and installer URLs
 ```
 
+`make build` downloads the current Windows installer and uses the version of the
+full nupkg inside that exact download for the Linux package. `RELEASES` may lag
+behind the installer; this produces a warning and does not select an older build.
+The build log records `manifest_version`, `installer_version`, `selected_version`,
+and the installer's SHA-256. Failed downloads stop the build.
+
+`make url` downloads the complete installer to a temporary directory to inspect
+its version. To inspect an existing installer without accessing the network, run
+`./figma-version-tool.sh --exe /path/to/FigmaSetup.exe`; add `--json` for machine
+readable output. `./build.sh --exe build/FigmaSetup.exe --build appimage --clean no`
+preserves the local installer before clearing the previous build directory.
+
 ## MCP Server
 
 When Figma Desktop is running, it exposes an MCP (Model Context Protocol) server at:
@@ -161,13 +173,35 @@ The launcher handles both X11 and Wayland:
 | Environment           | Behavior                                     |
 | --------------------- | -------------------------------------------- |
 | **X11**               | Works out of the box                         |
-| **Wayland** (default) | Uses XWayland for compatibility              |
-| **Wayland** (native)  | Set `FIGMA_USE_WAYLAND=1` for native Wayland |
+| **Wayland** (default) | Uses XWayland when available for compatibility |
+| **Wayland** (native)  | Opt-in, or automatic when `DISPLAY` is absent |
 
 ```bash
 # Force native Wayland mode
 FIGMA_USE_WAYLAND=1 ./figma-desktop-*.AppImage
 ```
+
+### Renderer selection
+
+The shared launcher selects the graphics mode at startup for AppImage, deb, and
+rpm. With `FIGMA_RENDERER=auto` (the default), an X11/XWayland display confirmed
+to lack GLX uses SwiftShader as a software OpenGL ES driver, keeping WebGL
+available for design files. Other sessions keep Electron's graphics defaults.
+The X11 check uses optional `xdpyinfo` and `timeout`, with a three-second limit;
+if the tools or display information are unavailable, the launcher keeps Electron's
+defaults. On systems without these tools, select software mode explicitly if needed.
+
+```bash
+FIGMA_RENDERER=software ./figma-desktop-*.AppImage  # Software OpenGL ES
+FIGMA_RENDERER=hardware ./figma-desktop-*.AppImage  # Electron graphics defaults
+```
+
+Software rendering uses the CPU and can be slower on large designs. GLX presence
+does not guarantee a working GPU driver; `FIGMA_RENDERER=software` also provides
+a manual fallback for driver problems. Native Wayland remains opt-in through
+`FIGMA_USE_WAYLAND=1`, and is selected automatically when a Wayland display exists
+without an X11 `DISPLAY`. `FIGMA_USE_X11=1` explicitly prefers XWayland when both
+backends are available.
 
 ## Extra Features
 

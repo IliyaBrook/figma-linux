@@ -6,6 +6,9 @@
 # Based on claude-desktop-debian architecture
 #===============================================================================
 
+# shellcheck source=scripts/figma-version-common.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/scripts/figma-version-common.sh"
+
 # Global variables (set by functions, used throughout)
 architecture=''
 distro_family=''  # debian, rpm, or unknown
@@ -27,6 +30,8 @@ figma_extract_dir=''
 electron_resources_dest=''
 final_output_path=''
 electron_version=''
+manifest_version=''
+installer_version=''
 
 # Package metadata (constants)
 readonly PACKAGE_NAME='figma-desktop'
@@ -244,7 +249,7 @@ parse_arguments() {
 check_dependencies() {
 	echo 'Checking dependencies...'
 	local deps_to_install=''
-	local common_deps='7z wget convert'
+	local common_deps='7z wget curl convert'
 	local all_deps="$common_deps"
 
 	# Add format-specific dependencies
@@ -255,12 +260,12 @@ check_dependencies() {
 
 	# Command-to-package mappings per distro family
 	declare -A debian_pkgs=(
-		[7z]='p7zip-full' [wget]='wget'
+		[7z]='p7zip-full' [wget]='wget' [curl]='curl'
 		[convert]='imagemagick'
 		[dpkg-deb]='dpkg-dev' [rpmbuild]='rpm'
 	)
 	declare -A rpm_pkgs=(
-		[7z]='7zip' [wget]='wget'
+		[7z]='7zip' [wget]='wget' [curl]='curl'
 		[convert]='ImageMagick'
 		[dpkg-deb]='dpkg' [rpmbuild]='rpm-build'
 	)
@@ -328,9 +333,30 @@ check_dependencies() {
 }
 
 setup_work_directory() {
-	rm -rf "$work_dir"
-	mkdir -p "$work_dir" || exit 1
-	mkdir -p "$app_staging_dir" || exit 1
+	# Preserve --exe before clearing build/, including relative paths and symlinks.
+	local saved_installer=''
+	if [[ -n $local_exe_path ]]; then
+		if [[ ! -f $local_exe_path ]]; then
+			echo "Local installer file not found: $local_exe_path" >&2
+			exit 1
+		fi
+		saved_installer=$(mktemp "$project_root/.figma-installer.XXXXXX") || exit 1
+		if ! cp -- "$local_exe_path" "$saved_installer"; then
+			rm -f -- "$saved_installer"
+			exit 1
+		fi
+	fi
+	if ! rm -rf -- "$work_dir" || ! mkdir -p "$app_staging_dir"; then
+		[[ -z $saved_installer ]] || rm -f -- "$saved_installer"
+		exit 1
+	fi
+	if [[ -n $saved_installer ]]; then
+		if ! mv -- "$saved_installer" "$work_dir/$figma_exe_filename"; then
+			rm -f -- "$saved_installer"
+			exit 1
+		fi
+		local_exe_path="$work_dir/$figma_exe_filename"
+	fi
 }
 
 setup_nodejs() {
@@ -481,26 +507,14 @@ setup_electron_asar() {
 resolve_figma_version() {
 	section_header 'Resolving Figma Version'
 
-	echo 'Fetching latest Figma Desktop version from RELEASES API...'
-	local releases_data
-	releases_data=$(curl -s -L -H 'User-Agent: Figma/1 (Windows; x64)' "$FIGMA_RELEASES_URL")
-
-	if [[ -z $releases_data ]]; then
-		echo 'Failed to fetch Figma RELEASES data' >&2
-		exit 1
-	fi
-
-	local nupkg_name
-	nupkg_name=$(echo "$releases_data" | awk '{print $2}')
-	version=$(echo "$nupkg_name" | sed 's/Figma-\(.*\)-full\.nupkg/\1/')
-
-	if [[ -z $version ]]; then
-		echo 'Failed to extract version from RELEASES data' >&2
-		exit 1
-	fi
-
 	figma_download_url="$FIGMA_EXE_URL"
-	echo "Latest Figma version: $version"
+	if [[ -n $local_exe_path ]]; then
+		echo 'Using local installer; skipping online RELEASES lookup.'
+	elif manifest_version=$(figma_fetch_manifest_version "$FIGMA_RELEASES_URL"); then
+		echo "manifest_version: $manifest_version"
+	else
+		echo 'Warning: RELEASES unavailable or invalid; using the downloaded installer as source of truth.' >&2
+	fi
 	echo "Download URL: $figma_download_url"
 
 	section_footer 'Resolving Figma Version'
@@ -517,15 +531,30 @@ download_figma_installer() {
 			echo "Local installer file not found: $local_exe_path" >&2
 			exit 1
 		fi
-		cp "$local_exe_path" "$figma_exe_path" || exit 1
-		echo 'Local installer copied to build directory'
+		# setup_work_directory has already preserved this installer in build/.
+		if [[ $local_exe_path != "$figma_exe_path" ]]; then
+			cp -- "$local_exe_path" "$figma_exe_path" || exit 1
+		fi
+		echo 'Local installer ready in build directory'
 	else
 		echo "Downloading Figma Desktop installer..."
-		if ! wget -O "$figma_exe_path" "$figma_download_url"; then
+		if ! figma_download_installer "$figma_download_url" "$figma_exe_path"; then
 			echo "Failed to download Figma Desktop installer from $figma_download_url" >&2
 			exit 1
 		fi
 		echo "Download complete: $figma_exe_filename"
+	fi
+
+	local nupkg_name
+	nupkg_name=$(figma_installer_nupkg "$figma_exe_path") || exit 1
+	installer_version=$(figma_version_from_nupkg "$nupkg_name") || exit 1
+	version=$installer_version
+	echo "manifest_version: ${manifest_version:-unavailable (or local installer)}"
+	echo "installer_version: $installer_version"
+	echo "selected_version: $version"
+	echo "Installer SHA-256: $(sha256sum "$figma_exe_path" | cut -d' ' -f1)"
+	if [[ -n $manifest_version && $manifest_version != "$installer_version" ]]; then
+		echo "Warning: RELEASES ($manifest_version) and installer ($installer_version) differ; using installer version." >&2
 	fi
 
 	echo "Extracting resources from $figma_exe_filename..."
@@ -538,23 +567,14 @@ download_figma_installer() {
 	fi
 
 	cd "$figma_extract_dir" || exit 1
-	local nupkg_path_relative
-	nupkg_path_relative=$(find . -maxdepth 1 -name 'Figma-*.nupkg' | head -1)
+	local nupkg_path_relative="./$nupkg_name"
 
-	if [[ -z $nupkg_path_relative ]]; then
+	if [[ ! -f $nupkg_path_relative ]]; then
 		echo "Could not find Figma nupkg file in $figma_extract_dir" >&2
 		cd "$project_root" || exit 1
 		exit 1
 	fi
 	echo "Found nupkg: $nupkg_path_relative (in $figma_extract_dir)"
-
-	# Extract version from nupkg filename (e.g., Figma-126.1.2-full.nupkg)
-	local nupkg_version
-	nupkg_version=$(echo "$nupkg_path_relative" | LC_ALL=C grep -oP 'Figma-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
-	if [[ -n $nupkg_version ]]; then
-		version="$nupkg_version"
-		echo "Version from nupkg: $version"
-	fi
 
 	if ! 7z x -y "$nupkg_path_relative"; then
 		echo 'Failed to extract nupkg' >&2
@@ -1430,6 +1450,6 @@ main() {
 }
 
 # Run main with all script arguments
-main "$@"
-
-exit 0
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+	main "$@"
+fi

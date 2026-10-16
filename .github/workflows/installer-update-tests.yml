@@ -1,0 +1,43 @@
+name: build and launcher tests
+
+on:
+  push:
+    branches: [master, 'codex/**']
+    paths:
+      - 'build.sh'
+      - 'figma-version-tool.sh'
+      - 'scripts/figma-version-common.sh'
+      - 'scripts/tests/**'
+      - 'scripts/launcher-common.sh'
+      - 'scripts/build-*.sh'
+      - '.github/workflows/installer-update-tests.yml'
+  pull_request:
+    paths:
+      - 'build.sh'
+      - 'figma-version-tool.sh'
+      - 'scripts/figma-version-common.sh'
+      - 'scripts/tests/**'
+      - 'scripts/launcher-common.sh'
+      - 'scripts/build-*.sh'
+      - '.github/workflows/installer-update-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install archive tools
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full shellcheck
+      - name: Check shell syntax
+        run: |
+          for script in build.sh figma-version-tool.sh scripts/*.sh; do
+            bash -n "$script" || exit 1
+          done
+      - name: Test installer updates and launcher selection without upstream downloads
+        run: node --test scripts/tests/*.test.js scripts/font-enum/tests/*.test.js
+      - name: Lint version discovery and launcher scripts
+        run: shellcheck -x figma-version-tool.sh scripts/figma-version-common.sh scripts/launcher-common.sh
