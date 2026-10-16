@@ -1,0 +1,22 @@
+pkgbase = figma-desktop-bin
+	pkgdesc = Figma Desktop for Linux (patched Windows build, incl. FigJam and local font support)
+	pkgver = 126.5.6
+	pkgrel = 1
+	url = https://github.com/soroushalinia/figma-linux
+	arch = x86_64
+	license = custom:Figma-EULA
+	depends = fuse2
+	depends = zlib
+	depends = hicolor-icon-theme
+	depends = gtk3
+	depends = nss
+	depends = libxcrypt-compat
+	provides = figma-desktop
+	conflicts = figma-desktop
+	options = !strip
+	source = figma-desktop-126.5.6-amd64.AppImage::https://github.com/IliyaBrook/figma-linux/releases/download/126.5.6/figma-desktop-126.5.6-amd64.AppImage
+	source = figma-desktop.desktop
+	sha256sums = 48b9f8cbe35509c04366b1aa2299a920441abd8ef19e0b7924c23cc86d60ebfd
+	sha256sums = 5c0a875a0d414fd8c92e596736707e079a24a03de235f197f38f65b491688df3
+
+pkgname = figma-desktop-bin
