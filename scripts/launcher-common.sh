@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Common launcher functions for Figma Desktop (AppImage and deb)
-# This file is sourced by both launchers to avoid code duplication
+# Common launcher functions for Figma Desktop (AppImage, deb, and rpm).
 
 # Setup logging directory and file
 # Sets: log_dir, log_file
@@ -21,28 +20,65 @@ log_message() {
 detect_display_backend() {
 	# Detect if Wayland is running
 	is_wayland=false
-	[[ -n $WAYLAND_DISPLAY ]] && is_wayland=true
+	[[ -n ${WAYLAND_DISPLAY:-} ]] && is_wayland=true
 
 	# Default: Use X11/XWayland on Wayland for compatibility
-	# Set FIGMA_USE_WAYLAND=1 to use native Wayland
+	# Use native Wayland if XWayland is unavailable, or when explicitly requested.
 	use_x11_on_wayland=true
-	[[ $FIGMA_USE_WAYLAND == '1' ]] && use_x11_on_wayland=false
+	if [[ ${FIGMA_USE_WAYLAND:-} == '1' || -z ${DISPLAY:-} ]]; then
+		use_x11_on_wayland=false
+	fi
+	[[ ${FIGMA_USE_X11:-} == '1' ]] && use_x11_on_wayland=true
+	return 0
 }
 
 # Check if we have a valid display (not running from TTY)
 # Returns: 0 if display available, 1 if not
 check_display() {
-	[[ -n $DISPLAY || -n $WAYLAND_DISPLAY ]]
+	[[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]]
+}
+
+# Keep Electron's graphics defaults unless X11 is confirmed to lack GLX.
+# The optional probe is bounded and never examines X11 when using native Wayland.
+select_renderer() {
+	local requested_renderer=${FIGMA_RENDERER:-auto}
+	selected_renderer='hardware'
+	case "$requested_renderer" in
+		hardware) log_message 'Renderer: Electron defaults (hardware requested)' ;;
+		software) selected_renderer='software'; log_message 'Renderer: SwiftShader (software requested)' ;;
+		auto)
+			local display_info
+			if [[ ( $is_wayland != true || $use_x11_on_wayland == true ) && -n ${DISPLAY:-} ]] \
+				&& command -v xdpyinfo > /dev/null 2>&1 && command -v timeout > /dev/null 2>&1 \
+				&& display_info=$(LC_ALL=C timeout 3s xdpyinfo -display "$DISPLAY" -queryExtensions 2>/dev/null) \
+				&& [[ $display_info == *'number of extensions:'* ]]; then
+				if [[ ! $display_info =~ (^|[[:space:]])GLX([[:space:]]|$) ]]; then
+					selected_renderer='software'
+					log_message 'Renderer: SwiftShader (X11 display has no GLX)'
+				else
+					log_message 'Renderer: Electron defaults (X11 GLX available)'
+				fi
+			else
+				log_message 'Renderer: Electron defaults (native Wayland or X11 probe unavailable)'
+			fi
+			;;
+		*)
+			echo "Invalid FIGMA_RENDERER: $requested_renderer (expected auto, hardware, or software)" >&2
+			return 1
+			;;
+	esac
+	if [[ $selected_renderer == 'software' ]]; then
+		# SwiftShader as an OpenGL ES driver; keep WebGL enabled.
+		electron_args+=('--use-gl=angle' '--use-angle=swiftshader')
+	fi
 }
 
 # Build Electron arguments array based on display backend
 # Requires: is_wayland, use_x11_on_wayland to be set
 #           (call detect_display_backend first)
 # Sets: electron_args array
-# Arguments: $1 = "appimage" or "deb" (affects --no-sandbox behavior)
+# The optional package-type argument is accepted by all package launchers.
 build_electron_args() {
-	local package_type="${1:-deb}"
-
 	electron_args=()
 
 	# Disable Chromium sandbox for all package types. Figma's
@@ -57,7 +93,9 @@ build_electron_args() {
 	# Disable CustomTitlebar for better Linux integration
 	electron_args+=('--disable-features=CustomTitlebar')
 
-	# X11 session - no special flags needed
+	select_renderer || return 1
+
+	# X11 session - no backend override needed
 	if [[ $is_wayland != true ]]; then
 		log_message 'X11 session detected'
 		return
