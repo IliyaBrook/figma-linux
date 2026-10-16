@@ -1,22 +1,62 @@
-#!/bin/bash
-# Fetch version from RELEASES manifest
-RELEASES=$(curl -s -L -H 'User-Agent: Figma/1 (Windows; x64)' \
-  "https://desktop.figma.com/win/RELEASES")
+#!/usr/bin/env bash
+set -euo pipefail
 
-NUPKG=$(echo "$RELEASES" | awk '{print $2}')
-RELEASES_VERSION=$(echo "$NUPKG" | sed 's/Figma-\(.*\)-full\.nupkg/\1/')
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/figma-version-common.sh
+source "$script_dir/scripts/figma-version-common.sh"
 
-# Fetch actual version from inside FigmaSetup.exe (first 2MB contains nupkg filename)
-EXE_NUPKG=$(curl -s -L -H 'User-Agent: Figma/1 (Windows; x64)' \
-  -r 0-2097151 "https://desktop.figma.com/win/FigmaSetup.exe" \
-  | strings | grep -oP 'Figma-[\d.]+-full\.nupkg' | head -1)
-EXE_VERSION=$(echo "$EXE_NUPKG" | sed 's/Figma-\(.*\)-full\.nupkg/\1/')
+releases_url='https://desktop.figma.com/win/RELEASES'
+exe_url='https://desktop.figma.com/win/FigmaSetup.exe'
+installer_path=''
+output_json=false
+temp_dir=''
+trap '[[ -z $temp_dir ]] || rm -rf -- "$temp_dir"' EXIT
 
-echo "RELEASES version: $RELEASES_VERSION"
-echo "EXE version:      ${EXE_VERSION:-unknown}"
-if [[ -n "$EXE_VERSION" && "$RELEASES_VERSION" != "$EXE_VERSION" ]]; then
-  echo "  ⚠ Versions differ! EXE is newer."
+while (( $# )); do
+	case "$1" in
+		--json) output_json=true; shift ;;
+		--exe)
+			if [[ $# -lt 2 || -z $2 || $2 == -* ]]; then
+				echo 'Usage: figma-version-tool.sh [--json] [--exe /path/to/FigmaSetup.exe]' >&2
+				exit 1
+			fi
+			installer_path=$2
+			shift 2
+			;;
+		-h|--help)
+			echo 'Usage: figma-version-tool.sh [--json] [--exe /path/to/FigmaSetup.exe]'
+			echo 'Without --exe, downloads and inspects the complete current Windows installer.'
+			echo '--exe inspects a local installer without network access.'
+			exit 0
+			;;
+		*) echo "Unknown option: $1" >&2; exit 1 ;;
+	esac
+done
+
+manifest_version=''
+if [[ -z $installer_path ]]; then
+	if ! manifest_version=$(figma_fetch_manifest_version "$releases_url"); then
+		echo 'Warning: RELEASES unavailable or invalid; inspecting the installer instead.' >&2
+	fi
+	temp_dir=$(mktemp -d)
+	installer_path="$temp_dir/FigmaSetup.exe"
+	echo 'Downloading current Windows installer for version inspection...' >&2
+	figma_download_installer "$exe_url" "$installer_path"
 fi
-echo ""
-echo "nupkg:   https://desktop.figma.com/win/build/$NUPKG"
-echo "exe:     https://desktop.figma.com/win/FigmaSetup.exe"
+
+nupkg_name=$(figma_installer_nupkg "$installer_path")
+installer_version=$(figma_version_from_nupkg "$nupkg_name")
+selected_version=$installer_version
+if [[ -n $manifest_version && $manifest_version != "$installer_version" ]]; then
+	echo "Warning: RELEASES ($manifest_version) and installer ($installer_version) differ; selecting installer version." >&2
+fi
+
+if [[ $output_json == true ]]; then
+	# Values are either empty or validated numeric versions.
+	printf '{"manifest_version":"%s","installer_version":"%s","selected_version":"%s"}\n' \
+		"$manifest_version" "$installer_version" "$selected_version"
+else
+	printf 'manifest_version:  %s\ninstaller_version: %s\nselected_version:  %s\n' \
+		"${manifest_version:-unavailable (or local installer)}" "$installer_version" "$selected_version"
+	printf '\nnupkg: https://desktop.figma.com/win/build/%s\nexe:   %s\n' "$nupkg_name" "$exe_url"
+fi
