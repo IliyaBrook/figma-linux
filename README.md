@@ -64,6 +64,25 @@ chmod +x figma-desktop-*.AppImage
 ./figma-desktop-*.AppImage
 ```
 
+#### FUSE requirement
+
+The AppImage mounts itself with **FUSE2** (`libfuse.so.2`). Most modern distributions ship only **FUSE3**, which is **not** a substitute, so you may need to install FUSE2 first:
+
+| Distribution                | Install command                   |
+| --------------------------- | --------------------------------- |
+| Arch / Manjaro              | `sudo pacman -S fuse2`            |
+| Ubuntu 22.04                | `sudo apt install libfuse2`       |
+| Ubuntu 24.04+ / Debian 13+  | `sudo apt install libfuse2t64`    |
+| Fedora / RHEL               | `sudo dnf install fuse fuse-libs` |
+
+If you can't install FUSE2, run the AppImage with `--appimage-extract-and-run` — it extracts and runs without FUSE:
+
+```bash
+./figma-desktop-*.AppImage --appimage-extract-and-run
+```
+
+> **Important:** Without FUSE2, the `figma://` browser login hand-off fails **silently** — the protocol-handler launch can't mount the AppImage, the OAuth token never reaches the app, and it stays stuck on the login screen. Install FUSE2 (or use `--appimage-extract-and-run`) to make browser login complete.
+
 On first launch the AppImage automatically:
 
 - Creates a `.desktop` entry in `~/.local/share/applications/`
@@ -86,8 +105,9 @@ This covers the normal font picker and the **Installed by you** flow. If you alr
 - **p7zip** — for extracting the Windows installer
 - **ImageMagick** — for icon conversion
 - **wget** — for downloading the installer
+- **FUSE2** (`libfuse2`/`fuse2`) — for AppImage builds; `appimagetool` is itself an AppImage and needs `libfuse.so.2` to run
 
-> The build script auto-detects missing dependencies and installs them via `apt` (Debian/Ubuntu) or `dnf` (Fedora/RHEL).
+> The build script auto-detects missing dependencies and installs them via `apt` (Debian/Ubuntu), `dnf` (Fedora/RHEL), or `pacman` (Arch).
 
 #### Build & Run
 
