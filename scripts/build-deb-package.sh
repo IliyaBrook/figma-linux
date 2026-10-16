@@ -267,7 +267,13 @@ chmod 755 "$package_root/DEBIAN" || exit 1
 chmod 755 "$package_root/DEBIAN/postinst" || exit 1
 chmod 755 "$package_root/DEBIAN/postrm" || exit 1
 
-if ! dpkg-deb --build "$package_root" "$deb_file"; then
+# Do not carry the builder's umask or copied file modes into system directories.
+find "$package_root" -type d -exec chmod 755 {} + || exit 1
+find "$package_root" -type f -perm /111 -exec chmod 755 {} + || exit 1
+find "$package_root" -type f ! -perm /111 -exec chmod 644 {} + || exit 1
+
+# Record root ownership without requiring a root build or a fakeroot wrapper.
+if ! dpkg-deb --root-owner-group --build "$package_root" "$deb_file"; then
 	echo 'Failed to build .deb package' >&2
 	exit 1
 fi
