@@ -197,6 +197,11 @@ install -Dm 644 $staging_dir/figma-desktop.desktop %{buildroot}/usr/share/applic
 # Install launcher script
 install -Dm 755 $staging_dir/figma-desktop %{buildroot}/usr/bin/figma-desktop
 
+# Normalize copied modes independently of the builder's umask.
+find "%{buildroot}" -type d -exec chmod 755 {} +
+find "%{buildroot}" -type f -perm /111 -exec chmod 755 {} +
+find "%{buildroot}" -type f ! -perm /111 -exec chmod 644 {} +
+
 %post
 update-desktop-database /usr/share/applications > /dev/null 2>&1 || true
 
@@ -233,6 +238,7 @@ fi
 update-desktop-database /usr/share/applications > /dev/null 2>&1 || true
 
 %files
+%defattr(-, root, root, 0755)
 %attr(755, root, root) /usr/bin/figma-desktop
 /usr/lib/$package_name
 /usr/share/applications/figma-desktop.desktop
