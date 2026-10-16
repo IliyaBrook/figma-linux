@@ -248,6 +248,10 @@ echo "AppStream metadata created"
 
 # --- Get appimagetool ---
 appimagetool_path=''
+# When appimagetool is the official AppImage, run it via --appimage-extract-and-run
+# so the build does NOT require FUSE2 on the host. Native/system installs are
+# invoked directly.
+appimagetool_extract_run=''
 
 if command -v appimagetool &> /dev/null; then
 	appimagetool_path=$(command -v appimagetool)
@@ -259,6 +263,7 @@ for arch in x86_64 aarch64; do
 	local_path="$work_dir/appimagetool-${arch}.AppImage"
 	if [[ -f $local_path ]]; then
 		appimagetool_path="$local_path"
+		appimagetool_extract_run='--appimage-extract-and-run'
 		echo "Found downloaded ${arch} appimagetool: $appimagetool_path"
 	fi
 done
@@ -276,6 +281,7 @@ if [[ -z $appimagetool_path ]]; then
 
 	appimagetool_url="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${tool_arch}.AppImage"
 	appimagetool_path="$work_dir/appimagetool-${tool_arch}.AppImage"
+	appimagetool_extract_run='--appimage-extract-and-run'
 
 	if wget -q -O "$appimagetool_path" "$appimagetool_url"; then
 		chmod +x "$appimagetool_path" || exit 1
@@ -287,6 +293,30 @@ if [[ -z $appimagetool_path ]]; then
 	fi
 fi
 
+# --- Get the type2 AppImage runtime (static, supports both FUSE2 and FUSE3) ---
+# The classic appimagetool runtime dlopens libfuse.so.2 and fails on distros
+# that ship only libfuse3 (Arch, Fedora 35+, Ubuntu 22.04+/Debian 13+). The
+# type2-runtime statically links libfuse/squashfuse and mounts through either
+# fusermount (FUSE2) or fusermount3 (FUSE3), so the produced AppImage runs on
+# FUSE3-only systems out of the box.
+runtime_arch="${tool_arch:-x86_64}"
+runtime_path="$work_dir/appimage-runtime-${runtime_arch}"
+runtime_file_arg=''
+if [[ -f $runtime_path ]]; then
+	echo "Found downloaded type2 runtime: $runtime_path"
+	runtime_file_arg="--runtime-file $runtime_path"
+else
+	runtime_url="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${runtime_arch}"
+	if wget -q -O "$runtime_path" "$runtime_url"; then
+		chmod +x "$runtime_path" || exit 1
+		echo "Downloaded type2 runtime to $runtime_path"
+		runtime_file_arg="--runtime-file $runtime_path"
+	else
+		echo "Warning: Failed to download type2 runtime; appimagetool's default FUSE2 runtime will be used." >&2
+		rm -f "$runtime_path"
+	fi
+fi
+
 # --- Build AppImage ---
 echo 'Building AppImage...'
 output_filename="${package_name}-${version}-${architecture}.AppImage"
@@ -295,7 +325,8 @@ export ARCH="$architecture"
 echo "Using ARCH=$ARCH"
 
 echo 'Building AppImage without update information'
-if ! "$appimagetool_path" "$appdir_path" "$output_path"; then
+# shellcheck disable=SC2086
+if ! "$appimagetool_path" $appimagetool_extract_run $runtime_file_arg "$appdir_path" "$output_path"; then
 	echo "Failed to build AppImage using $appimagetool_path" >&2
 	exit 1
 fi
