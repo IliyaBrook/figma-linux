@@ -82,10 +82,12 @@ This covers the normal font picker and the **Installed by you** flow. If you alr
 
 #### Prerequisites
 
-- **Node.js 20+** (or the script installs it locally)
-- **p7zip** — for extracting the Windows installer
+- **Node.js 22.12+** (or the script installs it locally)
+- **7z** — for extracting the Windows installer (`p7zip-full` on Debian/Ubuntu, `7zip` on Fedora)
 - **ImageMagick** — for icon conversion
 - **wget** — for downloading the installer
+
+AppImage packaging uses SHA-256-verified appimagetool `1.9.1` and Type-2 runtime `20251108`. Building uses extract-and-run and does not require FUSE. Normal AppImage launch uses the bundled static FUSE support and a system `fusermount3` (or compatible `fusermount`) helper, without requiring `libfuse.so.2`. On hosts where FUSE mounting is unavailable, use `APPIMAGE_EXTRACT_AND_RUN=1 ./figma-desktop-<version>-<arch>.AppImage`. This runtime change addresses FUSE-related launch failures; browser selection and `figma://` OAuth callback configuration still need separate verification.
 
 > The build script auto-detects missing dependencies and installs them via `apt` (Debian/Ubuntu) or `dnf` (Fedora/RHEL).
 

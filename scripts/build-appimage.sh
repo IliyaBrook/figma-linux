@@ -250,56 +250,21 @@ cat > "$metadata_dir/${component_id}.appdata.xml" << EOF
 EOF
 echo "AppStream metadata created"
 
-# --- Get appimagetool ---
-appimagetool_path=''
-
-if command -v appimagetool &> /dev/null; then
-	appimagetool_path=$(command -v appimagetool)
-	echo "Found appimagetool in PATH: $appimagetool_path"
-fi
-
-for arch in x86_64 aarch64; do
-	[[ -n $appimagetool_path ]] && break
-	local_path="$work_dir/appimagetool-${arch}.AppImage"
-	if [[ -f $local_path ]]; then
-		appimagetool_path="$local_path"
-		echo "Found downloaded ${arch} appimagetool: $appimagetool_path"
-	fi
-done
-
-if [[ -z $appimagetool_path ]]; then
-	echo 'Downloading appimagetool...'
-	case "$architecture" in
-		amd64) tool_arch='x86_64' ;;
-		arm64) tool_arch='aarch64' ;;
-		*)
-			echo "Unsupported architecture for appimagetool: $architecture" >&2
-			exit 1
-			;;
-	esac
-
-	appimagetool_url="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${tool_arch}.AppImage"
-	appimagetool_path="$work_dir/appimagetool-${tool_arch}.AppImage"
-
-	if wget -q -O "$appimagetool_path" "$appimagetool_url"; then
-		chmod +x "$appimagetool_path" || exit 1
-		echo "Downloaded appimagetool to $appimagetool_path"
-	else
-		echo "Failed to download appimagetool from $appimagetool_url" >&2
-		rm -f "$appimagetool_path"
-		exit 1
-	fi
-fi
+# --- Get verified, pinned appimagetool and Type-2 runtime ---
+# shellcheck source=scripts/appimage-toolchain.sh
+source "$script_dir/appimage-toolchain.sh"
+prepare_appimage_tools "$architecture" "$work_dir" || exit 1
 
 # --- Build AppImage ---
 echo 'Building AppImage...'
 output_filename="${package_name}-${version}-${architecture}.AppImage"
 output_path="$work_dir/$output_filename"
-export ARCH="$architecture"
+export ARCH="$tool_arch"
 echo "Using ARCH=$ARCH"
 
 echo 'Building AppImage without update information'
-if ! "$appimagetool_path" "$appdir_path" "$output_path"; then
+if ! APPIMAGE_EXTRACT_AND_RUN=1 "$appimagetool_path" \
+	--runtime-file "$runtime_path" "$appdir_path" "$output_path"; then
 	echo "Failed to build AppImage using $appimagetool_path" >&2
 	exit 1
 fi
