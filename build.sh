@@ -958,6 +958,22 @@ console.log('Updated package.json: main entry set to frame-fix-entry.js');
 		echo 'Warning: bindings_worker.js not found - font utility process may crash'
 	fi
 
+	# Figma 126.10+ swaps all native bindings for empty stubs on Linux in main.js
+	echo 'Removing Linux native bindings gate...'
+	sed -i 's|=process.platform==="linux"\|\|process.env.NODE_ENV==="test";|=process.env.NODE_ENV==="test";|' "$main_js"
+	if grep -q '=process.platform==="linux"||process.env.NODE_ENV==="test";' "$main_js"; then
+		echo 'Warning: Linux native bindings gate still present'
+	fi
+
+	# Figma 126.10+ also returns empty fonts on Linux in bindings_worker.js
+	echo 'Removing Linux empty-fonts early return...'
+	for js in "$main_js" "$worker_js"; do
+		[[ -f $js ]] && sed -i 's|if(process.platform==="linux")return{getFonts:()=>"{}",|if(!1)return{getFonts:()=>"{}",|g' "$js"
+	done
+	if grep -q 'if(process.platform==="linux")return{getFonts' "$main_js" "$worker_js" 2>/dev/null; then
+		echo 'Warning: Linux empty-fonts early return still present'
+	fi
+
 	# ---- Patch handleCommandLineArgs for Linux argv ----
 	# On Linux, Electron is invoked with CLI flags (--no-sandbox, --disable-features=...)
 	# before the app.asar path, so process.argv looks like:
