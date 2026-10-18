@@ -251,6 +251,7 @@ figma-desktop-linux/
   figma-version-tool.sh             # Compare RELEASES vs FigmaSetup.exe versions
   scripts/
     frame-fix-wrapper.js            # BrowserWindow monkey-patch for native frames
+    tab-bar-background.js           # Paints the tab bar with the window colour (Wayland workaround)
     figma-native-stub.js            # JS stubs for Windows/macOS native modules
     font-enum/                      # Pure JS local/system font scanner + parser
     launcher-common.sh              # Shared X11/Wayland detection logic

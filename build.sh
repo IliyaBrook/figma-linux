@@ -712,10 +712,12 @@ patch_app_asar() {
 	echo "Original main entry: $original_main"
 
 	cp "$project_root/scripts/frame-fix-wrapper.js" app.asar.contents/frame-fix-wrapper.js || exit 1
+	cp "$project_root/scripts/tab-bar-background.js" app.asar.contents/tab-bar-background.js || exit 1
 
 	cat > app.asar.contents/frame-fix-entry.js << EOFENTRY
 // Load frame fix first
 require('./frame-fix-wrapper.js');
+require('./tab-bar-background.js');
 // Then load original main
 require('./${original_main}');
 EOFENTRY
