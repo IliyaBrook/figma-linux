@@ -3,6 +3,17 @@
   Figma Desktop for Linux
 </h1>
 
+> [!IMPORTANT]
+> **Archived — no longer maintained as of November 7, 2026.**
+>
+> Unfortunately, I no longer have the time to maintain this project. I now work on macOS and Windows, and I no longer have a personal interest in continuing its development.
+>
+> There will be no further releases, bug fixes, security updates, or support from me. Existing issues and pull requests will remain available for reference, but I will no longer review or merge contributions here.
+>
+> The source, documentation, and existing releases are preserved for reference. The instructions below describe the project before archival; compatibility with future Figma versions is not guaranteed. If you would like to continue development, you are welcome to fork the repository and maintain your own version.
+>
+> Thank you to everyone who used the project, reported issues, and contributed fixes.
+
 <p align="center">
   Run the <b>real</b> Figma Desktop app on Linux — not a browser wrapper, not a web app,<br/>
   but the actual Electron-based desktop client with full functionality.
@@ -55,9 +66,9 @@ The build script performs a multi-stage pipeline:
 
 ## Installation
 
-### Option 1: Download Pre-built AppImage (Recommended)
+### Option 1: Download an Existing AppImage
 
-Grab the latest AppImage from the [Releases](https://github.com/IliyaBrook/figma-linux/releases) page — no build step required. New project builds are published there as AppImage, deb, and rpm artifacts.
+Existing AppImage, deb, and rpm packages remain available on the [Releases](https://github.com/IliyaBrook/figma-linux/releases) page. These are archived builds and will not receive updates.
 
 ```bash
 chmod +x figma-desktop-*.AppImage
