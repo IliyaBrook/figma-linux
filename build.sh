@@ -700,6 +700,40 @@ console.log('Extracted: ' + extracted + ' files, Skipped: ' + skipped + ' (unpac
 	section_footer 'Extracting app.asar'
 }
 
+# Figma only picks the white (dark mode) tray icon on Windows: its dark mode
+# check returns false on other platforms and the theme listener is Windows only.
+# Enable both on Linux; the native stub answers isSystemDarkMode from nativeTheme.
+patch_tray_icon_theme() {
+	echo 'Patching tray icon to follow dark mode on Linux...'
+	node - "$1" << 'EOFTRAYICON'
+const fs = require('fs');
+const file = process.argv[2];
+let code = fs.readFileSync(file, 'utf8');
+const original = code;
+
+//   function Fz(){return process.platform!=="win32"?!1:Pe.isSystemDarkMode()}
+const darkMode = /process\.platform!=="win32"(&&process\.platform!=="linux")?\?!1:(\w+)\.isSystemDarkMode\(\)/;
+if (darkMode.test(code)) {
+  code = code.replace(darkMode, 'process.platform!=="win32"&&process.platform!=="linux"?!1:$2.isSystemDarkMode()');
+} else {
+  console.error('Warning: Tray icon dark mode pattern not found - Figma may have updated');
+}
+
+//   ot&&this.themeCallback&&js.nativeTheme.addListener("updated",this.themeCallback)
+const listener = /(?<=[,;{(])(\w+)&&this\.themeCallback&&(\w+)\.nativeTheme\.(addListener|removeListener)\("updated",this\.themeCallback\)/g;
+if (listener.test(code)) {
+  code = code.replace(listener, '($1||process.platform==="linux")&&this.themeCallback&&$2.nativeTheme.$3("updated",this.themeCallback)');
+} else if (!code.includes('||process.platform==="linux")&&this.themeCallback')) {
+  console.error('Warning: Tray icon theme listener pattern not found - Figma may have updated');
+}
+
+if (code !== original) {
+  fs.writeFileSync(file, code);
+  console.log('Tray icon patched: follows dark mode on Linux');
+}
+EOFTRAYICON
+}
+
 patch_app_asar() {
 	section_header 'Patching app.asar'
 
@@ -1042,6 +1076,11 @@ if (m) {
   console.error('Right-click on tray icon may not show context menu on Linux');
 }
 "
+	fi
+
+	# ---- Patch tray icon to follow dark mode on Linux ----
+	if [[ -f $main_js ]]; then
+		patch_tray_icon_theme "$main_js"
 	fi
 
 	# ---- Patch tray window: CSS fixes + DevTools debug support ----
