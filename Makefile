@@ -1,6 +1,6 @@
 APPIMAGE := $(wildcard figma-desktop-*.AppImage)
 
-.PHONY: build build-deb build-rpm build-appimage run run-debug clean url
+.PHONY: build build-deb build-rpm build-pacman build-appimage run run-debug clean url
 
 build: build-appimage
 
@@ -9,6 +9,9 @@ build-deb:
 
 build-rpm:
 	./build.sh --build rpm --clean no
+
+build-pacman:
+	./build.sh --build pacman --clean no
 
 build-appimage:
 	./build.sh --build appimage --clean no
@@ -27,9 +30,12 @@ endif
 
 clean:
 	rm -rf build/
+	rm -rf src/ pkg/
 	rm -f figma-desktop-*.AppImage
 	rm -f figma-desktop_*.deb
 	rm -f figma-desktop-*.rpm
+	rm -f figma-desktop-*.pkg.tar.zst
+	rm -f figma-desktop-*.pkg.tar.zst.sig
 
 url:
 	./figma-version-tool.sh
