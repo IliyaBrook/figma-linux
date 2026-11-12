@@ -700,6 +700,38 @@ console.log('Extracted: ' + extracted + ' files, Skipped: ' + skipped + ' (unpac
 	section_footer 'Extracting app.asar'
 }
 
+# On Linux with libappindicator (GNOME, KDE), Electron's 'right-click' event
+# on Tray does NOT fire. Figma uses popUpContextMenu() inside a right-click
+# handler, which never triggers. Fix: add setContextMenu() right after tray
+# creation so appindicator can show the menu natively.
+patch_tray_context_menu() {
+	echo 'Patching tray context menu for Linux...'
+	node - "$1" << 'EOFTRAYMENU'
+const fs = require('fs');
+const file = process.argv[2];
+let code = fs.readFileSync(file, 'utf8');
+
+// Matches the tray right-click handler regardless of minified names:
+//   this.electronTray.on("right-click",()=>{var V;(V=this.electronTray)==null||V.popUpContextMenu(MENUFN())})
+//   this.electronTray.on("right-click",()=>{this.electronTray?.popUpContextMenu(MENUFN())})   (126.10+)
+const pattern = /this\.electronTray\.on\("right-click",\(\)=>\{(?:var (\w+);\(\1=this\.electronTray\)==null\|\|\1|this\.electronTray\?)\.popUpContextMenu\((\w+)\(\)\)\}\)/;
+const m = code.match(pattern);
+if (!m) {
+  console.error('Warning: Tray context menu pattern not found - Figma may have updated');
+  console.error('Right-click on tray icon may not show context menu on Linux');
+} else {
+  const setContextMenu = 'this.electronTray.setContextMenu(' + m[2] + '()),';
+  if (code.slice(m.index - setContextMenu.length, m.index) === setContextMenu) {
+    console.log('Tray context menu already patched - skipping');
+  } else {
+    code = code.slice(0, m.index) + setContextMenu + code.slice(m.index);
+    fs.writeFileSync(file, code);
+    console.log('Tray context menu patched: added setContextMenu() for Linux');
+  }
+}
+EOFTRAYMENU
+}
+
 patch_app_asar() {
 	section_header 'Patching app.asar'
 
@@ -1017,31 +1049,8 @@ if (m) {
 	fi
 
 	# ---- Patch tray context menu for Linux ----
-	# On Linux with libappindicator (GNOME, KDE), Electron's 'right-click' event
-	# on Tray does NOT fire. Figma uses popUpContextMenu() inside a right-click
-	# handler, which never triggers. Fix: add setContextMenu() right after tray
-	# creation so appindicator can show the menu natively.
-	echo 'Patching tray context menu for Linux...'
 	if [[ -f $main_js ]]; then
-		node -e "
-const fs = require('fs');
-let code = fs.readFileSync('$main_js', 'utf8');
-
-// Regex matches tray init regardless of minified variable names:
-//   this.electronTray.setToolTip(MOD.name),this.electronTray.on(\"right-click\",()=>{var V;(V=this.electronTray)==null||V.popUpContextMenu(MENUFN())})
-const pattern = /this\.electronTray\.setToolTip\((\w+)\.name\),this\.electronTray\.on\(\"right-click\",\(\)=>\{var (\w+);\(\2=this\.electronTray\)==null\|\|\2\.popUpContextMenu\((\w+)\(\)\)\}\)/;
-const m = code.match(pattern);
-if (m) {
-  const [fullMatch, modName, varName, menuFn] = m;
-  const replacement = 'this.electronTray.setToolTip(' + modName + '.name),this.electronTray.setContextMenu(' + menuFn + '()),this.electronTray.on(\"right-click\",()=>{var ' + varName + ';(' + varName + '=this.electronTray)==null||' + varName + '.popUpContextMenu(' + menuFn + '())})';
-  code = code.replace(fullMatch, replacement);
-  fs.writeFileSync('$main_js', code);
-  console.log('Tray context menu patched: added setContextMenu() for Linux (regex match)');
-} else {
-  console.error('Warning: Tray context menu pattern not found - Figma may have updated');
-  console.error('Right-click on tray icon may not show context menu on Linux');
-}
-"
+		patch_tray_context_menu "$main_js"
 	fi
 
 	# ---- Patch tray window: CSS fixes + DevTools debug support ----
